@@ -28,7 +28,7 @@ public struct DerivationPath {
     public var change: UInt32 = 0
     public var addressIndex: UInt32 = 0
 
-    init(account: UInt32, change: UInt32, addressIndex: UInt32) {
+    public init(account: UInt32, change: UInt32, addressIndex: UInt32) {
         self.account = account
         self.change = change
         self.addressIndex = addressIndex
@@ -41,7 +41,7 @@ public struct MnemonicOptions {
     public var mnemonicEncoding: String?
     public var algorithm: AlgorithmType = .ed25519
 
-    init(
+    public init(
         address: String? = nil,
         derivationPath: DerivationPath,
         mnemonicEncoding: String? = nil,
