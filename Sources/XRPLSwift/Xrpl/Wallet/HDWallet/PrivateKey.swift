@@ -29,7 +29,7 @@ internal struct PrivateKey {
 
     internal init(seed: Data, coin: Coin) {
         let keyBytes = Array("Bitcoin seed".utf8)
-        let hmacBytes = try! CryptoSwift.HMAC(key: keyBytes, variant: .sha2(.sha256)).authenticate(Array(seed))
+        let hmacBytes = try! CryptoSwift.HMAC(key: keyBytes, variant: .sha2(.sha512)).authenticate(Array(seed))
         let output = Data(hmacBytes)
         self.raw = output[0..<32]
         self.chainCode = output[32..<64]
@@ -105,7 +105,7 @@ internal struct PrivateKey {
         #endif
         data += derivingIndex.data
         
-        let digestBytes = try! CryptoSwift.HMAC(key: Array(chainCode), variant: .sha2(.sha256)).authenticate(Array(data))
+        let digestBytes = try! CryptoSwift.HMAC(key: Array(chainCode), variant: .sha2(.sha512)).authenticate(Array(data))
         let digest = Data(digestBytes)
         let factor = BInt(data: digest[0..<32])
 
