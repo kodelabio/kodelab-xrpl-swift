@@ -28,7 +28,9 @@ internal struct PrivateKey {
     private var keyType: PrivateKeyType
 
     internal init(seed: Data, coin: Coin) {
-        let output = try! Data(CryptoSwift.HMAC(key: "Bitcoin seed".data(using: .ascii)!.bytes, variant: .sha512).authenticate(seed.bytes))
+        let keyBytes = Array("Bitcoin seed".utf8)
+        let hmacBytes = try! CryptoSwift.HMAC(key: keyBytes, variant: .sha2(.sha256)).authenticate(Array(seed))
+        let output = Data(hmacBytes)
         self.raw = output[0..<32]
         self.chainCode = output[32..<64]
         self.index = 0
@@ -90,7 +92,7 @@ internal struct PrivateKey {
             var _data = raw
             let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN))!
             let pk = try! SECP256K1.derivePublicKey(ctx: ctx, secretKey: _data.getPointer())
-            data += try! Data(pk.compressed)
+            data += Data(pk.compressed)
             // TODO: IDK WHY I HAVE TO DO THIS
             _ = _data.getPointer()
             secp256k1_context_destroy(ctx)
@@ -102,8 +104,9 @@ internal struct PrivateKey {
         let derivingIndex = CFSwapInt32BigToHost(node.hardens ? (edge | node.index) : node.index)
         #endif
         data += derivingIndex.data
-
-        let digest = try! Data(HMAC.init(key: chainCode.bytes, variant: .sha512).authenticate(data.bytes))
+        
+        let digestBytes = try! CryptoSwift.HMAC(key: Array(chainCode), variant: .sha2(.sha256)).authenticate(Array(data))
+        let digest = Data(digestBytes)
         let factor = BInt(data: digest[0..<32])
 
         let curveOrder = BInt(hex: "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141")!
