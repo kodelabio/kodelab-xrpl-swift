@@ -27,6 +27,12 @@ public struct DerivationPath {
     public var account: UInt32 = 0
     public var change: UInt32 = 0
     public var addressIndex: UInt32 = 0
+
+    init(account: UInt32, change: UInt32, addressIndex: UInt32) {
+        self.account = account
+        self.change = change
+        self.addressIndex = addressIndex
+    }
 }
 
 public struct MnemonicOptions {
@@ -34,12 +40,25 @@ public struct MnemonicOptions {
     public var derivationPath: DerivationPath
     public var mnemonicEncoding: String?
     public var algorithm: AlgorithmType = .ed25519
+
+    init(
+        address: String? = nil,
+        derivationPath: DerivationPath,
+        mnemonicEncoding: String? = nil,
+        algorithm: AlgorithmType = .ed25519
+    ) {
+        self.address = address
+        self.derivationPath = derivationPath
+        self.mnemonicEncoding = mnemonicEncoding
+        self.algorithm = algorithm
+    }
 }
 
 public struct SignatureResult {
     public var txBlob: String
     public var hash: String
 }
+
 
 /**
  A utility for deriving a wallet composed of a keypair (publicKey/privateKey).
