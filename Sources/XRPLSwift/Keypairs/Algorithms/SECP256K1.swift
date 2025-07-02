@@ -21,6 +21,7 @@ public enum SigningError: Error {
     case invalidSignature
     case invalidPrivateKey
     case invalidPublicKey
+    case contextNil
 }
 
 public enum SECP256K1Error: Error {
@@ -34,7 +35,11 @@ internal class SECP256K1: SigningAlgorithm {
 
         // FIXME: NOT THE FULL DERIVATION PATH, SEE https://xrpl.org/cryptographic-keys.html#key-derivation
 
-        let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN))!
+        guard let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN)) else {
+            throw SigningError.contextNil
+        }
+        
+        defer { secp256k1_context_destroy(ctx) }
 
         // derive the root secret key
         var rootSecretKey = findSecretKey(ctx: ctx, startingKey: seed)
@@ -73,7 +78,6 @@ internal class SECP256K1: SigningAlgorithm {
         // TODO: IDK WHY I HAVE TO DO THIS
         _ = masterPrivateKeyForDerivation.getPointer()
         let masterPublicKeyHex = masterPublicKey.compressed.toHex
-        secp256k1_context_destroy(ctx)
 
         return KeyPair(privateKey: finalMasterPrivateKey.toHex, publicKey: masterPublicKeyHex)
 
@@ -91,8 +95,7 @@ internal class SECP256K1: SigningAlgorithm {
 
     internal static func derivePublicKey(ctx: OpaquePointer, secretKey: UnsafePointer<UInt8>) throws -> ECDSAPublicKey {
         var _publicKey = secp256k1_pubkey()
-        if secp256k1_ec_pubkey_create(ctx, UnsafeMutablePointer<secp256k1_pubkey>(&_publicKey), secretKey) == 0 {
-            secp256k1_context_destroy(ctx)
+        if secp256k1_ec_pubkey_create(ctx, &_publicKey, secretKey) == 0 {
             throw SECP256K1Error.derivationFailed
         }
 
@@ -108,79 +111,68 @@ internal class SECP256K1: SigningAlgorithm {
         var size = publicKey.count
         let flags = compressed ? UInt32(SECP256K1_EC_COMPRESSED) : UInt32(SECP256K1_EC_UNCOMPRESSED)
         if secp256k1_ec_pubkey_serialize(ctx, &publicKey[0], &size, &_publicKey, flags) == 0 {
-            secp256k1_context_destroy(ctx)
             throw SECP256K1Error.derivationFailed
         }
         return publicKey
     }
 
     static func sign(message: [UInt8], privateKey: [UInt8]) throws -> [UInt8] {
-        let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN))
+        guard let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN)) else {
+            throw SigningError.contextNil
+        }
+        
+        defer { secp256k1_context_destroy(ctx) }
+        
         var sig = secp256k1_ecdsa_signature()
-
+        
         // remove one byte prefix from primary key
         let privateKey = [UInt8](privateKey.suffix(from: 1))
 
         var _privateKey = Data(privateKey)
         var _data = Data(sha512HalfHash(data: message))
 
-        if secp256k1_ecdsa_sign(ctx!, &sig, _data.getPointer(), _privateKey.getPointer(), secp256k1_nonce_function_rfc6979, nil) == 0 {
-            secp256k1_context_destroy(ctx)
+        if secp256k1_ecdsa_sign(ctx, &sig, _data.getPointer(), _privateKey.getPointer(), secp256k1_nonce_function_rfc6979, nil) == 0 {
             throw SigningError.invalidPrivateKey
         }
 
-        // TODO: IDK WHY I HAVE TO DO THIS
-        //        _ = _data.getPointer()
-        //        _ = _privateKey.getPointer()
-
         var tmp: [UInt8] = Array(repeating: 0, count: 72)
         var size = tmp.count
-        if secp256k1_ecdsa_signature_serialize_der(ctx!, &tmp[0], &size, &sig) == 0 {
-            secp256k1_context_destroy(ctx)
+        if secp256k1_ecdsa_signature_serialize_der(ctx, &tmp[0], &size, &sig) == 0 {
             throw SigningError.invalidSignature
         }
-        secp256k1_context_destroy(ctx)
         return [UInt8](tmp.prefix(through: size-1))
     }
 
     static func verify(signature: [UInt8], message: [UInt8], publicKey: [UInt8]) throws -> Bool {
-        let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_VERIFY))
+        guard let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_VERIFY)) else {
+            throw SigningError.contextNil
+        }
+        
+        defer { secp256k1_context_destroy(ctx) }
+        
         var sig = secp256k1_ecdsa_signature()
 
         var _signatureData = Data(signature)
         var _pubKeyData = Data(publicKey)
         var _msgDigest = Data(sha512HalfHash(data: message))
 
-        if secp256k1_ecdsa_signature_parse_der(ctx!, &sig, _signatureData.getPointer(), _signatureData.count) == 0 {
-            secp256k1_context_destroy(ctx)
+        if secp256k1_ecdsa_signature_parse_der(ctx, &sig, _signatureData.getPointer(), _signatureData.count) == 0 {
             throw SigningError.invalidSignature
         }
 
-        // TODO: IDK WHY I HAVE TO DO THIS
-        //        _ = _signatureData.getPointer()
-
         var pubKey = secp256k1_pubkey()
         let resultParsePublicKey = secp256k1_ec_pubkey_parse(
-            ctx!,
+            ctx,
             &pubKey,
             _pubKeyData.getPointer(),
             _pubKeyData.count
         )
 
-        // TODO: IDK WHY I HAVE TO DO THIS
-        //        _ = _pubKeyData.getPointer()
-
         if resultParsePublicKey == 0 {
-            secp256k1_context_destroy(ctx)
             throw SigningError.invalidPublicKey
         }
 
-        let result = secp256k1_ecdsa_verify(ctx!, &sig, _msgDigest.getPointer(), &pubKey)
-
-        // TODO: IDK WHY I HAVE TO DO THIS
-        //        _ = _msgDigest.getPointer()
-
-        secp256k1_context_destroy(ctx)
+        let result = secp256k1_ecdsa_verify(ctx, &sig, _msgDigest.getPointer(), &pubKey)
 
         if result == 1 {
             return true
@@ -190,17 +182,21 @@ internal class SECP256K1: SigningAlgorithm {
     }
 
     static func getPublicKey(publicKey: [UInt8]) throws -> String {
-        let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN))
+        guard let ctx = secp256k1_context_create(UInt32(SECP256K1_CONTEXT_SIGN)) else {
+            throw SigningError.contextNil
+        }
+        
+        defer { secp256k1_context_destroy(ctx) }
+        
         var _pubKeyData = Data(publicKey)
         var pubKey = secp256k1_pubkey()
         let resultParsePublicKey = secp256k1_ec_pubkey_parse(
-            ctx!,
+            ctx,
             &pubKey,
             _pubKeyData.getPointer(),
             _pubKeyData.count
         )
         if resultParsePublicKey == 0 {
-            secp256k1_context_destroy(ctx)
             throw SigningError.invalidPublicKey
         }
 
