@@ -55,7 +55,7 @@ func isoToBytes(iso: String) throws -> [UInt8] {
         return [UInt8].init(repeating: 0x0, count: CURRENCY_CODE_LENGTH)
     }
 
-    return [UInt8].init(repeating: 0x0, count: 12) + iso.bytes + [UInt8].init(repeating: 0x0, count: 5)
+    return try [UInt8].init(repeating: 0x0, count: 12) + iso.bytes + [UInt8].init(repeating: 0x0, count: 5)
 }
 
 // swiftlint:disable:next type_name
